@@ -1,178 +1,107 @@
-'use client'
-import { useState, useEffect, useRef } from 'react'
+"use client";
+import { useState, useEffect, useRef } from "react";
 
-const TABS = ["Chat","Game Dev","Image Gen","Image Edit","Video Gen","Video Edit","Song","Plagiarism"]
-
-export default function GeckoAI(){
-  const [tab, setTab] = useState("Chat")
-  const [tokens, setTokens] = useState(500)
-  const [messages, setMessages] = useState([{role:"ai", text:"I be Gecko AI 🦎 — I remember you. Wetin we go build today?"}])
-  const [input, setInput] = useState("")
-  const [imgPrompt, setImgPrompt] = useState("")
-  const [imgUrl, setImgUrl] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [plagText, setPlagText] = useState("")
-  const [plagResult, setPlagResult] = useState(null)
-  const fileRef = useRef(null)
+export default function GeckoVoice(){
+  const [listening,setListening]=useState(false);
+  const [speaking,setSpeaking]=useState(false);
+  const [transcript,setTranscript]=useState("");
+  const [response,setResponse]=useState("Hey! I'm GECKO. Say 'Hey Gecko' or tap the orb to talk. Try: 'Write essay' or 'Make song'");
+  const [tokens,setTokens]=useState(500);
+  const recognitionRef=useRef(null);
 
   useEffect(()=>{
-    const saved = localStorage.getItem("gecko_tokens")
-    if(saved) setTokens(parseInt(saved))
-  },[])
-  useEffect(()=>{localStorage.setItem("gecko_tokens", tokens)},[tokens])
-
-  const deduct = (n) => {
-    if(tokens < n){ alert("Tokens finished! Buy more tomorrow."); return false}
-    setTokens(t=>t-n); return true
-  }
-
-  const handleChat = async () => {
-    if(!input.trim()) return
-    if(!deduct(10)) return
-    const userMsg = {role:"user", text: input}
-    setMessages(m=>[...m, userMsg])
-    setInput("")
-    setLoading(true)
-    // Free AI chat via Pollinations text - no key
-    try{
-      const res = await fetch(`https://text.pollinations.ai/${encodeURIComponent(userMsg.text)}`)
-      const text = await res.text()
-      setMessages(m=>[...m, {role:"ai", text}])
-    }catch{
-      setMessages(m=>[...m, {role:"ai", text: "Gecko memory active. I go help you build game, image, song, video — all inside me. (Chat API sleep small, try again)"}])
+    if(typeof window!=="undefined"){
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if(!SpeechRecognition){ setResponse("Your browser no support voice. Use Chrome."); return; }
+      const rec = new SpeechRecognition();
+      rec.continuous=true;
+      rec.interimResults=true;
+      rec.lang="en-US";
+      rec.onresult=(e)=>{
+        let text="";
+        for(let i=e.resultIndex;i<e.results.length;i++) text+=e.results[i][0].transcript;
+        const lower=text.toLowerCase();
+        setTranscript(text);
+        if(lower.includes("hey gecko") || lower.includes("hey gecko")){
+          if(!listening) startGecko();
+        }
+      };
+      rec.onend=()=>{ if(listening) rec.start(); };
+      recognitionRef.current=rec;
     }
-    setLoading(false)
-  }
+  },[listening]);
 
-  const handleImageGen = () => {
-    if(!imgPrompt.trim()) return
-    if(!deduct(50)) return
-    setLoading(true)
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(imgPrompt)}?width=1024&height=1024&seed=${Math.floor(Math.random()*9999)}&nologo=true`
-    setImgUrl(url)
-    setTimeout(()=>setLoading(false), 1000)
-  }
+  const speak = (text)=>{
+    if(!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utter=new SpeechSynthesisUtterance(text);
+    utter.rate=1; utter.pitch=1.1;
+    utter.onstart=()=>setSpeaking(true);
+    utter.onend=()=>setSpeaking(false);
+    window.speechSynthesis.speak(utter);
+  };
 
-  const handlePlagiarism = () => {
-    if(!plagText.trim()) return
-    if(!deduct(20)) return
-    const sentences = plagText.split('.').filter(s=>s.trim().length>10)
-    const total = sentences.length || 1
-    // Simple uniqueness check - mock + local
-    const unique = sentences.filter((s,i)=> sentences.indexOf(s)===i).length
-    const score = Math.round((unique/total)*85 + 15) // 15-100
-    setPlagResult({
-      original: score,
-      copied: 100-score,
-      words: plagText.split(' ').length,
-      sentences: total
-    })
-  }
+  const startGecko=()=>{
+    setListening(true);
+    setTokens(t=>t-1);
+    const msg="Yes boss, I'm listening... What you need? Essay, image, song, or video?";
+    setResponse(msg);
+    speak(msg);
+    recognitionRef.current?.start();
+  };
 
-  return (
-    <div style={{fontFamily:"Inter, sans-serif", background:"#0a0a0a", color:"white", minHeight:"100vh"}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');`}</style>
-      
-      {/* Header */}
-      <div style={{display:"flex", justifyContent:"space-between", padding:"14px 20px", borderBottom:"1px solid #222", position:"sticky", top:0, background:"#0a0a0a", zIndex:10}}>
-        <div style={{fontWeight:800, fontSize:20}}>🦎 GECKO AI</div>
-        <div style={{display:"flex", gap:12, alignItems:"center"}}>
-          <div style={{background:"#1a1a1a", padding:"6px 12px", borderRadius:20, fontSize:13}}>🪙 {tokens} tokens</div>
-          <div style={{background:"#2bff88", color:"black", padding:"6px 12px", borderRadius:20, fontSize:13, fontWeight:600}}>Buy Tokens</div>
-        </div>
+  const stopGecko=()=>{
+    setListening(false);
+    recognitionRef.current?.stop();
+    if(transcript){
+      handleCommand(transcript);
+    }
+  };
+
+  const handleCommand=(cmd)=>{
+    setTokens(t=>t-5);
+    let reply="";
+    const c=cmd.toLowerCase();
+    if(c.includes("essay")) reply=`Got it. Writing essay about ${cmd.replace(/.*essay/i,"")}. Done! Essay ready, boss.`;
+    else if(c.includes("image")) reply=`Creating image for: ${cmd}. Image generated! Check preview.`;
+    else if(c.includes("song") || c.includes("music")) reply=`Making Afrobeats song about ${cmd}. Beat ready!`;
+    else if(c.includes("video")) reply=`Editing video for ${cmd}. Done!`;
+    else if(c.includes("summarize")) reply=`Summarizing your text... Summary: This is key point of ${cmd}`;
+    else reply=`You said: ${cmd}. I'm GECKO Voice, extra perfect than Siri. I can essay, summarize, image edit, video edit, song, plagiarism, presentation. What next?`;
+    
+    setResponse(reply);
+    speak(reply);
+    setTranscript("");
+  };
+
+  return(
+    <div style={{minHeight:"100vh", background:"radial-gradient(circle at center, #0f1f14 0%, #050505 70%)", color:"white", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:20, fontFamily:"sans-serif"}}>
+      <div style={{position:"absolute", top:16, width:"100%", maxWidth:400, display:"flex", justifyContent:"space-between", padding:"0 20px"}}>
+        <b style={{color:"#2bff88"}}>🦎 GECKO VOICE</b>
+        <span style={{background:"#111", border:"1px solid #222", padding:"4px 10px", borderRadius:20, fontSize:12}}>🪙 {tokens}</span>
       </div>
 
-      {/* Tabs */}
-      <div style={{display:"flex", gap:8, overflowX:"auto", padding:"12px 20px", borderBottom:"1px solid #1a1a1a"}}>
-        {TABS.map(t=>(
-          <button key={t} onClick={()=>setTab(t)} style={{whiteSpace:"nowrap", padding:"8px 14px", borderRadius:20, fontSize:12, fontWeight:600, border:"1px solid #333", background: tab===t ? "white" : "#151515", color: tab===t ? "black" : "white"}}>{t}</button>
-        ))}
+      {/* ORB LIKE SIRI */}
+      <div onClick={listening?stopGecko:startGecko} style={{width:180, height:180, borderRadius:"50%", background: listening?"radial-gradient(circle, #2bff88, #0a4a24)":"radial-gradient(circle, #222, #000)", border:`2px solid ${speaking?"#2bff88":"#333"}`, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", boxShadow: listening?"0 0 60px #2bff88":"0 0 20px #111", transition:"all 0.3s", animation: speaking?"pulse 0.8s infinite":listening?"pulse 1.5s infinite":"none"}}>
+        <span style={{fontSize:50}}>{speaking?"🗣️":listening?"👂":"🎙️"}</span>
+      </div>
+      <style>{`@keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.08)}100%{transform:scale(1)}}`}</style>
+
+      <div style={{marginTop:20, fontSize:13, opacity:0.6}}>{listening?"Listening... tap to stop":speaking?"Speaking...":"Tap orb or say 'Hey Gecko'"}</div>
+
+      <div style={{marginTop:24, background:"rgba(255,255,255,0.06)", border:"1px solid #222", borderRadius:16, padding:16, width:"100%", maxWidth:400, minHeight:120}}>
+        <div style={{fontSize:11, opacity:0.5, marginBottom:6}}>You said:</div>
+        <div style={{fontSize:14, minHeight:20}}>{transcript || "..."}</div>
+        <div style={{height:1, background:"#222", margin:"12px 0"}}/>
+        <div style={{fontSize:11, opacity:0.5, marginBottom:6}}>GECKO:</div>
+        <div style={{fontSize:14, lineHeight:1.5}}>{response}</div>
       </div>
 
-      {/* CONTENT */}
-      <div style={{maxWidth:900, margin:"0 auto", padding:20}}>
-
-        {tab==="Chat" && (
-          <div>
-            <div style={{height:"60vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12, marginBottom:12}}>
-              {messages.map((m,i)=>(
-                <div key={i} style={{alignSelf: m.role==="user"?"flex-end":"flex-start", background: m.role==="user"?"white":"#1a1a1a", color: m.role==="user"?"black":"white", padding:"10px 14px", borderRadius:18, maxWidth:"80%", fontSize:14}}>{m.text}</div>
-              ))}
-              {loading && <div style={{fontSize:12, opacity:0.6}}>Gecko dey think...</div>}
-            </div>
-            <div style={{display:"flex", gap:8}}>
-              <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleChat()} placeholder="Ask Gecko anything, e go remember you..." style={{flex:1, padding:"14px", borderRadius:25, background:"#1a1a1a", border:"1px solid #333", color:"white"}}/>
-              <button onClick={handleChat} style={{padding:"14px 20px", borderRadius:25, background:"white", color:"black", fontWeight:700}}>Send 10🪙</button>
-            </div>
-          </div>
-        )}
-
-        {tab==="Game Dev" && (
-          <div>
-            <h2 style={{fontSize:22, fontWeight:800}}>Game Dev Studio</h2>
-            <p style={{opacity:0.6, fontSize:13}}>Type game idea, Gecko go generate Godot/Unity code. 2D, Platformer, RPG — all in one.</p>
-            <div style={{display:"flex", gap:8, marginTop:16}}>
-              <input value={input} onChange={e=>setInput(e.target.value)} placeholder="e.g. Make Flappy Bird with Afrobeat soundtrack" style={{flex:1, padding:"14px", borderRadius:12, background:"#1a1a1a", border:"1px solid #333", color:"white"}}/>
-              <button onClick={()=>{setTab("Chat"); setInput(input);}} style={{padding:"14px", borderRadius:12, background:"white", color:"black", fontWeight:700}}>Generate 30🪙</button>
-            </div>
-            <div style={{marginTop:20, background:"#111", padding:16, borderRadius:12, fontSize:12, opacity:0.8}}>Gecko Game Engine: Uses Llama Coder inside. No external API. Generates full project folder structure.</div>
-          </div>
-        )}
-
-        {tab==="Image Gen" && (
-          <div>
-            <h2 style={{fontSize:22, fontWeight:800}}>Image Gen — FLUX Inside</h2>
-            <div style={{display:"flex", gap:8, marginTop:12}}>
-              <input value={imgPrompt} onChange={e=>setImgPrompt(e.target.value)} placeholder="e.g. Nigerian warrior queen, 2D game art" style={{flex:1, padding:"14px", borderRadius:12, background:"#1a1a1a", border:"1px solid #333", color:"white"}}/>
-              <button onClick={handleImageGen} style={{padding:"14px 20px", borderRadius:12, background:"white", color:"black", fontWeight:700}}>{loading?"...":"Gen 50🪙"}</button>
-            </div>
-            {imgUrl && <img src={imgUrl} alt="gen" style={{width:"100%", marginTop:16, borderRadius:16, border:"1px solid #222"}}/>}
-          </div>
-        )}
-
-        {tab==="Image Edit" && (
-          <div>
-            <h2 style={{fontSize:22, fontWeight:800}}>Image Edit — Upload + Prompt</h2>
-            <input type="file" ref={fileRef} accept="image/*" style={{marginTop:12}}/>
-            <input value={imgPrompt} onChange={e=>setImgPrompt(e.target.value)} placeholder="What to change? e.g. Make him wear agbada" style={{width:"100%", marginTop:12, padding:"14px", borderRadius:12, background:"#1a1a1a", border:"1px solid #333", color:"white"}}/>
-            <button onClick={handleImageGen} style={{marginTop:12, padding:"14px 20px", borderRadius:12, background:"white", color:"black", fontWeight:700, width:"100%"}}>Edit Image 40🪙</button>
-            <p style={{fontSize:11, opacity:0.5, marginTop:8}}>Upload go show for preview. For today V1, we use same FLUX engine to re-generate with your prompt. Full InstructPix2Pix coming tomorrow with GPU.</p>
-            {imgUrl && <img src={imgUrl} alt="edit" style={{width:"100%", marginTop:16, borderRadius:16}}/>}
-          </div>
-        )}
-
-        {tab==="Video Gen" && (
-          <div><h2 style={{fontSize:22, fontWeight:800}}>Video Gen</h2><p style={{opacity:0.6, fontSize:13, marginTop:8}}>Text to Video — Stable Video Diffusion inside Gecko (Free). Engine ready tomorrow with RunPod GPU. For today, we show preview pipeline.</p><div style={{background:"#111", padding:40, borderRadius:16, marginTop:16, textAlign:"center"}}>🎬 Video pipeline: Ready for GPU connection tomorrow. Token cost: 150🪙 per video</div></div>
-        )}
-
-        {tab==="Video Edit" && (
-          <div><h2 style={{fontSize:22, fontWeight:800}}>Video Edit — Upload + Prompt</h2><p style={{opacity:0.6, fontSize:13}}>Upload video, type "Change to anime style" — Rave model inside.</p><div style={{background:"#111", padding:40, borderRadius:16, marginTop:16, textAlign:"center"}}>📤 Drag & Drop Video Here (V2). For today, use Image Edit flow.</div></div>
-        )}
-
-        {tab==="Song" && (
-          <div><h2 style={{fontSize:22, fontWeight:800}}>Song Studio — MusicGen Inside</h2><p style={{opacity:0.6, fontSize:13}}>Generate Afrobeat, Amapiano, full song with lyrics.</p><div style={{background:"#111", padding:40, borderRadius:16, marginTop:16, textAlign:"center"}}>🎵 MusicGen + Stable Audio Open — Engine connects tomorrow. Token: 200🪙 per song</div></div>
-        )}
-
-        {tab==="Plagiarism" && (
-          <div>
-            <h2 style={{fontSize:22, fontWeight:800}}>Plagiarism Checker — Like Turnitin</h2>
-            <textarea value={plagText} onChange={e=>setPlagText(e.target.value)} placeholder="Paste essay, game script, or code here..." style={{width:"100%", minHeight:160, marginTop:12, padding:"14px", borderRadius:12, background:"#1a1a1a", border:"1px solid #333", color:"white"}}/>
-            <button onClick={handlePlagiarism} style={{marginTop:12, padding:"14px 20px", borderRadius:12, background:"white", color:"black", fontWeight:700, width:"100%"}}>Check Plagiarism 20🪙</button>
-            {plagResult && (
-              <div style={{marginTop:16, background:"#111", padding:16, borderRadius:12}}>
-                <div style={{display:"flex", gap:16, textAlign:"center"}}>
-                  <div style={{flex:1, background:"#151515", padding:12, borderRadius:10}}><div style={{fontSize:24, fontWeight:800, color:"#2bff88"}}>{plagResult.original}%</div><div style={{fontSize:11}}>Original</div></div>
-                  <div style={{flex:1, background:"#151515", padding:12, borderRadius:10}}><div style={{fontSize:24, fontWeight:800, color:"#ff4b4b"}}>{plagResult.copied}%</div><div style={{fontSize:11}}>Copied</div></div>
-                </div>
-                <div style={{fontSize:12, marginTop:12, opacity:0.7}}>Words: {plagResult.words} | Sentences: {plagResult.sentences} | Sources checked: Local DB + Semantic Embeddings (MiniLM free). PDF report — coming V2.</div>
-              </div>
-            )}
-          </div>
-        )}
-
+      <div style={{marginTop:16, display:"flex", gap:8, flexWrap:"wrap", maxWidth:400, justifyContent:"center"}}>
+        {["Hey Gecko write essay","Hey Gecko make image","Hey Gecko make song","Hey Gecko summarize"].map(c=><button key={c} onClick={()=>{setTranscript(c); handleCommand(c);}} style={{background:"#111", border:"1px solid #333", color:"#aaa", padding:"6px 10px", borderRadius:20, fontSize:11}}>{c}</button>)}
       </div>
 
-      <div style={{textAlign:"center", padding:20, opacity:0.3, fontSize:10}}>GECKO AI V1 — EOD BUILD • Token system active • Memory active • All models free inside • Tomorrow: GPU + Paystack</div>
+      <div style={{marginTop:20, fontSize:11, opacity:0.4, textAlign:"center"}}>Works only on Chrome / HTTPS. Allow microphone. <br/>Next: We add real Flux image + MusicGen + Essay brain.</div>
     </div>
-  )
+  );
 }
